@@ -53,9 +53,6 @@ import (
 )
 
 var (
-	// annotations
-	pathAnnotation = "index.ingress.banno.com/path"
-
 	// flags
 	flagAddress             = flag.String("address", "0.0.0.0:8080", "Address to listen on")
 	flagForceTLS            = flag.Bool("force-tls", true, "Force all URLs to be HTTPS, even if their Ingress objects has no TLS object")
@@ -210,30 +207,27 @@ func ingressWatchFunc(c *kubernetes.Clientset, ns string) func(options k8sMeta.L
 // TODO(adam): return multiple FQDN's
 func buildFQDN(ing *k8sNetworking.Ingress) string {
 	tlsHosts := make(map[string]bool)
-	if path, ok := ing.Annotations[pathAnnotation]; ok {
-		spec := ing.Spec
-		for i := range spec.TLS {
-			for j := range spec.TLS[i].Hosts {
-				tlsHosts[spec.TLS[i].Hosts[j]] = true
-			}
+	spec := ing.Spec
+	for i := range spec.TLS {
+		for j := range spec.TLS[i].Hosts {
+			tlsHosts[spec.TLS[i].Hosts[j]] = true
+		}
+	}
+
+	for i := range spec.Rules {
+		host := spec.Rules[i].Host
+
+		var u *url.URL
+		if *flagForceTLS || tlsHosts[host] {
+			u, _ = url.Parse(fmt.Sprintf("https://%s", host))
+		} else {
+			u, _ = url.Parse(fmt.Sprintf("http://%s", host))
+		}
+		if u == nil || u.Host == "" || strings.HasPrefix(u.Host, "localhost:") { // ignore invalid rules/hosts
+			continue
 		}
 
-		for i := range spec.Rules {
-			host := spec.Rules[i].Host
-
-			var u *url.URL
-			if *flagForceTLS || tlsHosts[host] {
-				u, _ = url.Parse(fmt.Sprintf("https://%s", host))
-			} else {
-				u, _ = url.Parse(fmt.Sprintf("http://%s", host))
-			}
-			if u == nil || u.Host == "" || strings.HasPrefix(u.Host, "localhost:") { // ignore invalid rules/hosts
-				continue
-			}
-
-			u.Path = path
-			return u.String()
-		}
+		return u.String()
 	}
 	return ""
 }
